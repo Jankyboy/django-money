@@ -3,7 +3,7 @@ from decimal import Decimal
 from django.core.exceptions import ValidationError
 from django.core.validators import DecimalValidator
 from django.db import models
-from django.db.models import F, Field, Func, Value
+from django.db.models import NOT_PROVIDED, F, Field, Func, Value
 from django.db.models.expressions import BaseExpression
 from django.db.models.signals import class_prepared
 from django.utils.encoding import smart_str
@@ -14,7 +14,7 @@ from djmoney.money import Currency, Money
 from moneyed import Money as OldMoney
 
 from .._compat import setup_managers
-from ..settings import CURRENCY_CHOICES, DECIMAL_PLACES, DEFAULT_CURRENCY
+from ..settings import CURRENCY_CHOICES, CURRENCY_CODE_MAX_LENGTH, DECIMAL_PLACES, DEFAULT_CURRENCY
 from ..utils import MONEY_CLASSES, get_currency_field_name, prepare_expression
 
 
@@ -35,7 +35,7 @@ def get_value(obj, expr):
     else:
         expr = expr.value
     if isinstance(expr, OldMoney):
-        expr.__class__ = Money
+        expr = Money(expr.amount, expr.currency)
     return expr
 
 
@@ -149,7 +149,7 @@ class CurrencyField(models.CharField):
     def __init__(self, price_field=None, default=DEFAULT_CURRENCY, **kwargs):
         if isinstance(default, Currency):
             default = default.code
-        kwargs.setdefault("max_length", 3)
+        kwargs.setdefault("max_length", CURRENCY_CODE_MAX_LENGTH)
         self.price_field = price_field
         super().__init__(default=default, **kwargs)
 
@@ -167,17 +167,17 @@ class MoneyField(models.DecimalField):
         name=None,
         max_digits=None,
         decimal_places=DECIMAL_PLACES,
-        default=None,
+        default=NOT_PROVIDED,
         default_currency=DEFAULT_CURRENCY,
         currency_choices=CURRENCY_CHOICES,
-        currency_max_length=3,
+        currency_max_length=CURRENCY_CODE_MAX_LENGTH,
         currency_field_name=None,
         money_descriptor_class=MoneyFieldProxy,
         **kwargs
     ):
         nullable = kwargs.get("null", False)
         default = self.setup_default(default, default_currency, nullable)
-        if not default_currency and default is not None:
+        if not default_currency and default is not NOT_PROVIDED:
             default_currency = default.currency
 
         self.currency_max_length = currency_max_length
@@ -206,8 +206,8 @@ class MoneyField(models.DecimalField):
         elif isinstance(default, (float, Decimal, int)):
             default = Money(default, default_currency)
         elif isinstance(default, OldMoney):
-            default.__class__ = Money
-        if default is not None and not isinstance(default, Money):
+            default = Money(default.amount, default.currency)
+        if default is not None and default is not NOT_PROVIDED and not isinstance(default, Money):
             raise ValueError("default value must be an instance of Money, is: %s" % default)
         return default
 
@@ -274,12 +274,18 @@ class MoneyField(models.DecimalField):
         else:
             return super().get_default()
 
+    @property
+    def _has_default(self):
+        # Whether the field has an explicitly provided non-empty default.
+        # `None` was used by django-money before, and we need to check it because it can come from historical migrations
+        return self.default not in (None, NOT_PROVIDED)
+
     def formfield(self, **kwargs):
         defaults = {"form_class": forms.MoneyField, "decimal_places": self.decimal_places}
         defaults.update(kwargs)
         defaults["currency_choices"] = self.currency_choices
         defaults["default_currency"] = self.default_currency
-        if self.default is not None:
+        if self._has_default:
             defaults["default_amount"] = self.default.amount
         return super().formfield(**defaults)
 
@@ -290,9 +296,7 @@ class MoneyField(models.DecimalField):
     def deconstruct(self):
         name, path, args, kwargs = super().deconstruct()
 
-        if self.default is None:
-            del kwargs["default"]
-        else:
+        if self._has_default:
             kwargs["default"] = self.default.amount
         if self.default_currency is not None and self.default_currency != DEFAULT_CURRENCY:
             kwargs["default_currency"] = str(self.default_currency)

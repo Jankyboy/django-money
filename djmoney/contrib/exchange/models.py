@@ -4,7 +4,7 @@ from django.core.exceptions import ImproperlyConfigured
 from django.db import models
 from django.utils.module_loading import import_string
 
-from djmoney.settings import EXCHANGE_BACKEND, RATES_CACHE_TIMEOUT
+from djmoney.settings import CURRENCY_CODE_MAX_LENGTH, EXCHANGE_BACKEND, RATES_CACHE_TIMEOUT
 
 from .exceptions import MissingRate
 
@@ -12,7 +12,7 @@ from .exceptions import MissingRate
 class ExchangeBackend(models.Model):
     name = models.CharField(max_length=255, primary_key=True)
     last_update = models.DateTimeField(auto_now=True)
-    base_currency = models.CharField(max_length=3)
+    base_currency = models.CharField(max_length=CURRENCY_CODE_MAX_LENGTH)
 
     def __str__(self):
         return self.name
@@ -22,7 +22,7 @@ class ExchangeBackend(models.Model):
 
 
 class Rate(models.Model):
-    currency = models.CharField(max_length=3)
+    currency = models.CharField(max_length=CURRENCY_CODE_MAX_LENGTH)
     value = models.DecimalField(max_digits=20, decimal_places=6)
     backend = models.ForeignKey(ExchangeBackend, on_delete=models.CASCADE, related_name="rates")
 
@@ -42,7 +42,7 @@ def get_rate(source, target, backend=None):
     """
     if backend is None:
         backend = get_default_backend_name()
-    key = "djmoney:get_rate:%s:%s:%s" % (source, target, backend)
+    key = "djmoney:get_rate:{}:{}:{}".format(source, target, backend)
     result = cache.get(key)
     if result is not None:
         return result
@@ -57,7 +57,7 @@ def _get_rate(source, target, backend):
         return 1
     rates = Rate.objects.filter(currency__in=(source, target), backend=backend).select_related("backend")
     if not rates:
-        raise MissingRate("Rate %s -> %s does not exist" % (source, target))
+        raise MissingRate("Rate {} -> {} does not exist".format(source, target))
     if len(rates) == 1:
         return _try_to_get_rate_directly(source, target, rates[0])
     return _get_rate_via_base(rates, target)
@@ -74,7 +74,7 @@ def _try_to_get_rate_directly(source, target, rate):
     elif rate.backend.base_currency == target and rate.currency == source:
         return 1 / rate.value
     # Case when target or source is not a base currency
-    raise MissingRate("Rate %s -> %s does not exist" % (source, target))
+    raise MissingRate("Rate {} -> {} does not exist".format(source, target))
 
 
 def _get_rate_via_base(rates, target):

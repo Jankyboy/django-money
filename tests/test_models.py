@@ -8,7 +8,7 @@ from copy import copy
 
 from django import VERSION
 from django.core.exceptions import ValidationError
-from django.db import models
+from django.db import IntegrityError, models
 from django.db.migrations.writer import MigrationWriter
 from django.db.models import Case, F, Func, Q, Value, When
 from django.utils.translation import override
@@ -44,8 +44,10 @@ from .testapp.models import (
     ModelWithTwoMoneyFields,
     ModelWithUniqueIdAndCurrency,
     ModelWithVanillaMoneyField,
+    NotNullMoneyFieldModel,
     NullMoneyFieldModel,
     ProxyModel,
+    ProxyModelWrapper,
     SimpleModel,
 )
 
@@ -80,6 +82,31 @@ class TestVanillaMoneyField:
 
         retrieved = model_class.objects.get(pk=instance.pk)
         assert retrieved.money == expected
+
+    def test_old_money_not_mutated_default(self):
+        # See GH-603
+        money = OldMoney(1, "EUR")
+
+        # When `moneyed.Money` is passed as a default value to a model
+        class Model(models.Model):
+            price = MoneyField(default=money, max_digits=10, decimal_places=2)
+
+            class Meta:
+                abstract = True
+
+        # Its class should remain the same
+        assert type(money) is OldMoney
+
+    def test_old_money_not_mutated_f_object(self):
+        # See GH-603
+        money = OldMoney(1, "EUR")
+
+        instance = ModelWithVanillaMoneyField.objects.create(money=Money(5, "EUR"), integer=2)
+        # When `moneyed.Money` is a part of an F-expression
+        instance.money = F("money") + money
+
+        # Its class should remain the same
+        assert type(money) is OldMoney
 
     def test_old_money_defaults(self):
         instance = ModelWithDefaultAsOldMoney.objects.create()
@@ -346,6 +373,11 @@ class TestNullableCurrency:
         assert str(exc.value) == "Missing currency value"
         assert not ModelWithNullableCurrency.objects.exists()
 
+    def test_fails_with_nullable_but_no_default(self):
+        with pytest.raises(IntegrityError) as exc:
+            ModelWithTwoMoneyFields.objects.create()
+        assert str(exc.value) == "NOT NULL constraint failed: testapp_modelwithtwomoneyfields.amount1"
+
     def test_query_not_null(self):
         money = Money(100, "EUR")
         ModelWithNullableCurrency.objects.create(money=money)
@@ -594,9 +626,14 @@ class TestDifferentCurrencies:
         assert Money(10, "EUR") != Money(10, "USD")
 
 
-@pytest.mark.parametrize(
-    "model_class", (AbstractModel, ModelWithNonMoneyField, InheritorModel, InheritedModel, ProxyModel)
-)
+INSTANCE_ACCESS_MODELS = [ModelWithNonMoneyField, InheritorModel, InheritedModel, ProxyModel]
+
+if VERSION[:2] < (3, 2):
+    # Django 3.2 and later does not support AbstractModel instancing
+    INSTANCE_ACCESS_MODELS.append(AbstractModel)
+
+
+@pytest.mark.parametrize("model_class", INSTANCE_ACCESS_MODELS)
 def test_manager_instance_access(model_class):
     with pytest.raises(AttributeError):
         model_class().objects.all()
@@ -669,7 +706,7 @@ def test_override_decorator():
     When current locale is changed, Money instances should be represented correctly.
     """
     with override("cs"):
-        assert str(Money(10, "CZK")) == "10.00 Kč"
+        assert str(Money(10, "CZK")) == "10,00 Kč"
 
 
 def test_properties_access():
@@ -729,3 +766,24 @@ def test_order_by():
 
     qs = ModelWithVanillaMoneyField.objects.order_by("integer").filter(money=Money(10, "AUD"))
     assert list(map(extract_data, qs)) == [(Money(10, "AUD"), 1), (Money(10, "AUD"), 2)]
+
+
+def test_distinct_through_wrapper():
+    NotNullMoneyFieldModel.objects.create(money=10, money_currency="USD")
+    NotNullMoneyFieldModel.objects.create(money=100, money_currency="USD")
+    NotNullMoneyFieldModel.objects.create(money=10, money_currency="EUR")
+
+    queryset = ProxyModelWrapper.objects.distinct()
+
+    assert queryset.count() == 3
+
+
+def test_mixer_blend():
+    try:
+        from mixer.backend.django import mixer
+    except AttributeError:
+        pass  # mixer doesn't work with pypy
+    else:
+        instance = mixer.blend(ModelWithTwoMoneyFields)
+        assert isinstance(instance.amount1, Money)
+        assert isinstance(instance.amount2, Money)

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Django-money documentation build configuration file, created by
 # sphinx-quickstart on Thu Sep 29 11:06:12 2016.
@@ -12,8 +11,9 @@
 # All configuration values have a default; values that are commented out
 # serve to show the default.
 
-import sys
 import os
+import sys
+
 
 # If extensions (or modules to document with autodoc) are in another directory,
 # add these directories to sys.path here. If the directory is relative to the
@@ -21,7 +21,9 @@ import os
 sys.path.insert(0, os.path.abspath('..'))
 
 import sphinx_rtd_theme
+
 from djmoney import __version__
+
 
 # -- General configuration ------------------------------------------------
 
@@ -50,9 +52,9 @@ source_suffix = '.rst'
 master_doc = 'index'
 
 # General information about the project.
-project = u'Django-money'
-copyright = u'2016, Jacob Hansson'
-author = u'Jacob Hansson'
+project = 'Django-money'
+copyright = '2016, Jacob Hansson'
+author = 'Jacob Hansson'
 
 # The version info for the project you're documenting, acts as replacement for
 # |version| and |release|, also used in various other places throughout the
@@ -225,8 +227,8 @@ latex_elements = {
 # (source start file, target name, title,
 #  author, documentclass [howto, manual, or own class]).
 latex_documents = [
-    (master_doc, 'Django-money.tex', u'Django-money Documentation',
-     u'Jacob Hansson', 'manual'),
+    (master_doc, 'Django-money.tex', 'Django-money Documentation',
+     'Jacob Hansson', 'manual'),
 ]
 
 # The name of an image file (relative to this directory) to place at the top of
@@ -255,7 +257,7 @@ latex_documents = [
 # One entry per manual page. List of tuples
 # (source start file, name, description, authors, manual section).
 man_pages = [
-    (master_doc, 'django-money', u'Django-money Documentation',
+    (master_doc, 'django-money', 'Django-money Documentation',
      [author], 1)
 ]
 
@@ -269,7 +271,7 @@ man_pages = [
 # (source start file, target name, title, author,
 #  dir menu entry, description, category)
 texinfo_documents = [
-    (master_doc, 'Django-money', u'Django-money Documentation',
+    (master_doc, 'Django-money', 'Django-money Documentation',
      author, 'Django-money', 'One line description of project.',
      'Miscellaneous'),
 ]

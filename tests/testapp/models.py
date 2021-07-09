@@ -5,6 +5,7 @@ Created on May 7, 2011
 """
 from decimal import Decimal
 
+from django.conf import settings
 from django.core.validators import MinValueValidator
 from django.db import models
 
@@ -13,7 +14,13 @@ from djmoney.models.managers import money_manager, understands_money
 from djmoney.models.validators import MaxMoneyValidator, MinMoneyValidator
 from djmoney.money import Money
 from moneyed import Money as OldMoney
-from reversion.revisions import register
+
+
+# Import reversion if configured
+if "reversion" in settings.INSTALLED_APPS:
+    from reversion.revisions import register
+else:
+    register = lambda _: None  # noqa
 
 
 class ModelWithVanillaMoneyField(models.Model):
@@ -115,6 +122,21 @@ class SimpleModel(models.Model):
 
 class NullMoneyFieldModel(models.Model):
     field = MoneyField(max_digits=10, decimal_places=2, null=True, default_currency="USD", blank=True)
+
+
+class ModelManager(models.Manager):
+    pass
+
+
+class NotNullMoneyFieldModel(models.Model):
+    money = MoneyField(max_digits=10, decimal_places=2)
+
+    objects = money_manager(ModelManager())
+
+
+class ProxyModelWrapper(NotNullMoneyFieldModel):
+    class Meta:
+        proxy = True
 
 
 class ProxyModel(SimpleModel):
